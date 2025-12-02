@@ -1,25 +1,31 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import MainNav from '@/components/MainNav';
 import { supabase } from '@/lib/supabaseClient';
 
-type Bidder = {
-  id: number;
-  code: string;
-  adapter_name: string | null;
+
+type BidderConfigRow = {
+  bidder: string;
+  geo: string | null;
+  device: string | null;
+  page_type: string | null;
+};
+
+type BidderSummary = {
+  bidder: string;
 };
 
 export default function BiddersPage() {
-  const [bidders, setBidders] = useState<Bidder[]>([]);
+  const [rows, setRows] = useState<BidderConfigRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const [search, setSearch] = useState('');
-  const [envFilter, setEnvFilter] = useState<string>('all');
-  const [geoFilter, setGeoFilter] = useState<string>('all');
-  const [deviceFilter, setDeviceFilter] = useState<string>('all');
-  const [pageTypeFilter, setPageTypeFilter] = useState<string>('all');
+  const [geoFilter, setGeoFilter] = useState<string>('All');
+  const [deviceFilter, setDeviceFilter] = useState<string>('All');
+  const [pageTypeFilter, setPageTypeFilter] = useState<string>('All');
 
   useEffect(() => {
     async function load() {
@@ -27,139 +33,156 @@ export default function BiddersPage() {
       setError(null);
 
       const { data, error } = await supabase
-        .from('bidders')
-        .select('id, code, adapter_name')
-        .order('code');
+        .from('bidder_configs_enriched')
+        .select('bidder, geo, device, page_type');
 
       if (error) {
         console.error(error);
         setError(error.message);
-        setLoading(false);
-        return;
+      } else {
+        setRows(data || []);
       }
-
-      setBidders((data ?? []) as Bidder[]);
       setLoading(false);
     }
 
     load();
   }, []);
 
-  const filtered = bidders.filter((b) => {
-    if (search && !b.code.toLowerCase().includes(search.toLowerCase())) {
-      return false;
-    }
-    // env/geo/device/page_type filters are placeholders for later;
-    // keep them here so the UI is wired and we can plug them into
-    // enriched views in the next step.
-    return true;
-  });
+  const geoOptions = useMemo(() => {
+    const set = new Set<string>();
+    rows.forEach((r) => {
+      if (r.geo) set.add(r.geo);
+    });
+    return Array.from(set).sort();
+  }, [rows]);
+
+  const deviceOptions = useMemo(() => {
+    const set = new Set<string>();
+    rows.forEach((r) => {
+      if (r.device) set.add(r.device);
+    });
+    return Array.from(set).sort();
+  }, [rows]);
+
+  const pageTypeOptions = useMemo(() => {
+    const set = new Set<string>();
+    rows.forEach((r) => {
+      if (r.page_type) set.add(r.page_type);
+    });
+    return Array.from(set).sort();
+  }, [rows]);
+
+  const filteredBidders: BidderSummary[] = useMemo(() => {
+    const seen = new Set<string>();
+
+    rows.forEach((r) => {
+      if (geoFilter !== 'All' && r.geo !== geoFilter) return;
+      if (deviceFilter !== 'All' && r.device !== deviceFilter) return;
+      if (pageTypeFilter !== 'All' && r.page_type !== pageTypeFilter) return;
+
+      const code = r.bidder;
+      if (!code) return;
+
+      if (search.trim()) {
+        const q = search.trim().toLowerCase();
+        if (!code.toLowerCase().includes(q)) return;
+      }
+
+      seen.add(code);
+    });
+
+    return Array.from(seen)
+      .sort()
+      .map((bidder) => ({ bidder }));
+  }, [rows, geoFilter, deviceFilter, pageTypeFilter, search]);
 
   return (
-    <main style={{ padding: 24, maxWidth: 1100, margin: '0 auto' }}>
-      <div style={{ marginBottom: 12 }}>
-        <Link href="/profiles">Profiles</Link>
-        {' · '}
-        <span>Bidders</span>
-      </div>
+    <main style={{ padding: '24px' }}>
+      <MainNav active="bidders" />
 
-      <h1 style={{ fontSize: 26, marginBottom: 4 }}>Bidders</h1>
-      <p style={{ marginBottom: 16 }}>
-        Browse bidders and click a row to see all mappings for that bidder across profiles and slots.
+      <h1 className="text-3xl font-bold mb-4">Bidders</h1>
+
+      <p className="mb-4 text-gray-700">
+        Browse bidders and click a row to see all mappings for that bidder across profiles and
+        slots.
       </p>
 
-      {/* Filters row */}
-      <div
-        style={{
-          display: 'flex',
-          flexWrap: 'wrap',
-          gap: 8,
-          marginBottom: 12,
-          alignItems: 'center',
-        }}
-      >
+      <div className="mb-4 flex flex-wrap gap-3 items-center">
         <input
           type="text"
           placeholder="Search bidder code…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          style={{
-            padding: '6px 8px',
-            borderRadius: 4,
-            border: '1px solid #d1d5db',
-            minWidth: 200,
-          }}
+          className="border rounded px-3 py-1 text-sm min-w-[220px]"
         />
-
-        <select
-          value={envFilter}
-          onChange={(e) => setEnvFilter(e.target.value)}
-          style={{ padding: '6px 8px', borderRadius: 4, border: '1px solid #d1d5db' }}
-        >
-          <option value="all">All environments</option>
-          <option value="prod">prod</option>
-          <option value="uat">uat</option>
-        </select>
 
         <select
           value={geoFilter}
           onChange={(e) => setGeoFilter(e.target.value)}
-          style={{ padding: '6px 8px', borderRadius: 4, border: '1px solid #d1d5db' }}
+          className="border rounded px-2 py-1 text-sm"
         >
-          <option value="all">All geos</option>
-          <option value="uk">uk</option>
-          <option value="us">us</option>
+          <option value="All">All geos</option>
+          {geoOptions.map((g) => (
+            <option key={g} value={g}>
+              {g}
+            </option>
+          ))}
         </select>
 
         <select
           value={deviceFilter}
           onChange={(e) => setDeviceFilter(e.target.value)}
-          style={{ padding: '6px 8px', borderRadius: 4, border: '1px solid #d1d5db' }}
+          className="border rounded px-2 py-1 text-sm"
         >
-          <option value="all">All devices</option>
-          <option value="desktop">desktop</option>
-          <option value="mobile">mobile</option>
+          <option value="All">All devices</option>
+          {deviceOptions.map((d) => (
+            <option key={d} value={d}>
+              {d}
+            </option>
+          ))}
         </select>
 
         <select
           value={pageTypeFilter}
           onChange={(e) => setPageTypeFilter(e.target.value)}
-          style={{ padding: '6px 8px', borderRadius: 4, border: '1px solid #d1d5db' }}
+          className="border rounded px-2 py-1 text-sm"
         >
-          <option value="all">All page types</option>
-          <option value="image_article">image_article</option>
-          <option value="video_article">video_article</option>
-          <option value="blog_article">blog_article</option>
-          <option value="index">index</option>
+          <option value="All">All page types</option>
+          {pageTypeOptions.map((p) => (
+            <option key={p} value={p}>
+              {p}
+            </option>
+          ))}
         </select>
       </div>
 
       {loading && <p>Loading bidders…</p>}
-      {error && <p style={{ color: '#b91c1c' }}>Error: {error}</p>}
+      {error && <p className="text-red-600 mb-4">Error: {error}</p>}
 
       {!loading && !error && (
         <table>
           <thead>
             <tr>
-              <th style={{ width: 80 }}>ID</th>
-              <th style={{ width: 200 }}>Code</th>
-              <th>Adapter name</th>
+              <th className="w-56 text-left">Bidder</th>
+              <th className="text-left">Details</th>
             </tr>
           </thead>
           <tbody>
-            {filtered.map((b) => (
-              <tr key={b.id}>
-                <td>{b.id}</td>
+            {filteredBidders.map((b) => (
+              <tr key={b.bidder} className="cursor-pointer">
                 <td>
-                  <Link href={`/bidders/${b.code}`}>{b.code}</Link>
+                  <Link href={`/bidders/${encodeURIComponent(b.bidder)}`} className="text-blue-600">
+                    {b.bidder}
+                  </Link>
                 </td>
-                <td>{b.adapter_name ?? '—'}</td>
+                <td className="text-gray-500 text-sm">
+                  Click to view mappings for this bidder across profiles and slots.
+                </td>
               </tr>
             ))}
-
-            {filtered.length === 0 && (
+            {filteredBidders.length === 0 && (
               <tr>
-                <td colSpan={3} style={{ textAlign: 'center', padding: 16 }}>
+                <td colSpan={2} className="text-center text-gray-500 py-4">
                   No bidders match the current filters.
                 </td>
               </tr>

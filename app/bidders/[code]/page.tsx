@@ -1,58 +1,70 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
-import { useParams } from 'next/navigation';
+import MainNav from '@/components/MainNav';
+import React, { use, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabaseClient';
 
-type BidderRow = {
-  slot: string | null;
-  page_type: string | null;
+type RouteParams = { code: string };
+
+type EnrichedRow = {
+  bidder_config_id: number;
+  bidder: string;
   params: any;
+  slot_config_id: number;
+  slot: string | null;
+  profile_id: number;
+  profile_name: string | null;
   geo: string | null;
   device: string | null;
+  page_type: string | null;
 };
 
-const PAGE_TYPE_ORDER = [
-  'image_article',
-  'video_article',
-  'index',
-  'blog_article',
-];
+type MatrixCell = {
+  slot: string;
+  pageType: string;
+  paramsJson: string;
+};
 
-export default function BidderMatrixPage() {
-  const params = useParams() as { code?: string };
-  const bidderCode = params?.code ?? '';
+export default function BidderMatrixPage({
+  params,
+}: {
+  params: Promise<RouteParams>;
+}) {
+  // Next 16: params is a Promise in client components, unwrap with use()
+  const { code: bidderCode } = use(params);
 
-  const [rows, setRows] = useState<BidderRow[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [allRows, setAllRows] = useState<EnrichedRow[]>([]);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // start empty; we’ll set defaults after data loads
-  const [geoFilter, setGeoFilter] = useState<string>('');
-  const [deviceFilter, setDeviceFilter] = useState<string>('');
+  // filters (we’ll coerce to valid options once data has loaded)
+  const [geoFilter, setGeoFilter] = useState<string>('uk');
+  const [deviceFilter, setDeviceFilter] = useState<string>('mobile');
 
-  //
-  // Load all mappings for this bidder
-  //
+  // ------------------------------------------------------------
+  // 1. Load ALL mappings for this bidder (no geo/device filters here)
+  // ------------------------------------------------------------
   useEffect(() => {
-    if (!bidderCode) return;
-
     async function load() {
       setLoading(true);
       setError(null);
 
       const { data, error } = await supabase
         .from('bidder_configs_enriched')
-        .select('slot, page_type, params, geo, device')
-        .eq('bidder', bidderCode);
+        .select(
+          'bidder_config_id,bidder,params,slot_config_id,slot,profile_id,profile_name,geo,device,page_type',
+        )
+        .eq('bidder', bidderCode)
+        .order('profile_id', { ascending: true })
+        .order('slot', { ascending: true });
 
       if (error) {
         console.error(error);
         setError(error.message);
-        setRows([]);
+        setAllRows([]);
       } else {
-        setRows((data as BidderRow[]) ?? []);
+        setAllRows(data as EnrichedRow[]);
       }
 
       setLoading(false);
@@ -61,231 +73,216 @@ export default function BidderMatrixPage() {
     load();
   }, [bidderCode]);
 
-  //
-  // Build raw option sets
-  //
-  const rawGeoOptions = useMemo(() => {
-    const set = new Set<string>();
-    rows.forEach((r) => r.geo && set.add(r.geo));
-    return Array.from(set).sort();
-  }, [rows]);
-
-  const rawDeviceOptions = useMemo(() => {
-    const set = new Set<string>();
-    rows.forEach((r) => r.device && set.add(r.device));
-    return Array.from(set).sort();
-  }, [rows]);
-
-  //
-  // Once options are known, set sensible defaults:
-  //   - geo: 'uk' if present, else first geo
-  //   - device: 'mobile' if present, else first device
-  //
-  useEffect(() => {
-    if (!rows.length) return;
-
-    if (!geoFilter) {
-      if (rawGeoOptions.includes('uk')) {
-        setGeoFilter('uk');
-      } else if (rawGeoOptions.length > 0) {
-        setGeoFilter(rawGeoOptions[0]);
-      }
-    }
-
-    if (!deviceFilter) {
-      if (rawDeviceOptions.includes('mobile')) {
-        setDeviceFilter('mobile');
-      } else if (rawDeviceOptions.length > 0) {
-        setDeviceFilter(rawDeviceOptions[0]);
-      }
-    }
-  }, [rows, rawGeoOptions, rawDeviceOptions, geoFilter, deviceFilter]);
-
-  //
-  // Apply filters (no "All" anymore – must match exactly)
-  //
-  const filteredRows = useMemo(
+  // ------------------------------------------------------------
+  // 2. Build available geo/device options from the raw data
+  // ------------------------------------------------------------
+  const geoOptions = useMemo(
     () =>
-      rows.filter((r) => {
-        if (geoFilter && r.geo !== geoFilter) return false;
-        if (deviceFilter && r.device !== deviceFilter) return false;
-        return true;
-      }),
-    [rows, geoFilter, deviceFilter],
+      Array.from(
+        new Set(
+          allRows
+            .map((r) => (r.geo || '').trim())
+            .filter((g) => g.length > 0),
+        ),
+      ).sort(),
+    [allRows],
   );
 
-  //
-  // Determine column set (page types)
-  //
-  const pageTypes = useMemo(() => {
-    const set = new Set<string>();
-    filteredRows.forEach((r) => r.page_type && set.add(r.page_type));
-    const found = Array.from(set);
+  const deviceOptions = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          allRows
+            .map((r) => (r.device || '').trim())
+            .filter((d) => d.length > 0),
+        ),
+      ).sort(),
+    [allRows],
+  );
 
-    const ordered: string[] = [];
-    PAGE_TYPE_ORDER.forEach((pt) => {
-      if (found.includes(pt)) ordered.push(pt);
-    });
-    found
-      .filter((pt) => !PAGE_TYPE_ORDER.includes(pt))
-      .sort()
-      .forEach((pt) => ordered.push(pt));
+  // When options change, coerce the current filter values to something valid.
+  useEffect(() => {
+    if (geoOptions.length > 0) {
+      if (!geoOptions.includes(geoFilter)) {
+        // Prefer 'uk' if available, else first option
+        const preferred =
+          geoOptions.includes('uk') ? 'uk' : geoOptions[0];
+        setGeoFilter(preferred);
+      }
+    }
+  }, [geoOptions, geoFilter]);
 
-    return ordered;
-  }, [filteredRows]);
+  useEffect(() => {
+    if (deviceOptions.length > 0) {
+      if (!deviceOptions.includes(deviceFilter)) {
+        // Prefer 'mobile' if available, else first option
+        const preferred =
+          deviceOptions.includes('mobile') ? 'mobile' : deviceOptions[0];
+        setDeviceFilter(preferred);
+      }
+    }
+  }, [deviceOptions, deviceFilter]);
 
-  //
-  // Determine row set (slots)
-  //
-  const slots = useMemo(() => {
-    const set = new Set<string>();
-    filteredRows.forEach((r) => r.slot && set.add(r.slot));
-    return Array.from(set).sort();
-  }, [filteredRows]);
+  // ------------------------------------------------------------
+  // 3. Apply filters in-memory
+  // ------------------------------------------------------------
+  const filteredRows = useMemo(
+    () =>
+      allRows.filter((r) => {
+        const geoOk = geoFilter ? r.geo === geoFilter : true;
+        const deviceOk = deviceFilter ? r.device === deviceFilter : true;
+        return geoOk && deviceOk;
+      }),
+    [allRows, geoFilter, deviceFilter],
+  );
 
-  //
-  // Build matrix: slot -> page_type -> params
-  //
-  const matrix = useMemo(() => {
-    const map = new Map<string, Map<string, any>>();
-    filteredRows.forEach((r) => {
-      if (!r.slot || !r.page_type) return;
-      if (!map.has(r.slot)) map.set(r.slot, new Map());
-      map.get(r.slot)!.set(r.page_type, r.params);
-    });
-    return map;
-  }, [filteredRows]);
+  // ------------------------------------------------------------
+  // 4. Build slot × page_type matrix
+  // ------------------------------------------------------------
+  const { slots, pageTypes, matrix } = useMemo(() => {
+    const slotSet = new Set<string>();
+    const pageTypeSet = new Set<string>();
+    const cellMap = new Map<string, MatrixCell>();
 
-  //
-  // Render
-  //
-  if (!bidderCode) {
-    return (
-      <main style={{ padding: 24, maxWidth: 1200, margin: '0 auto' }}>
-        <div style={{ marginBottom: 8 }}>
-          <Link href="/bidders">← Back to bidders</Link>
-        </div>
-        <p>Missing bidder code in URL.</p>
-      </main>
+    for (const row of filteredRows) {
+      const slot = (row.slot || '').trim();
+      const pageType = (row.page_type || '').trim();
+      if (!slot || !pageType) continue;
+
+      slotSet.add(slot);
+      pageTypeSet.add(pageType);
+
+      const key = `${slot}|||${pageType}`;
+      const paramsJson = JSON.stringify(row.params, null, 2);
+
+      cellMap.set(key, { slot, pageType, paramsJson });
+    }
+
+    const slots = Array.from(slotSet).sort();
+    const pageTypes = Array.from(pageTypeSet).sort();
+
+    const matrix: MatrixCell[][] = slots.map((slot) =>
+      pageTypes.map((pageType) => {
+        const key = `${slot}|||${pageType}`;
+        const cell = cellMap.get(key);
+        return (
+          cell || {
+            slot,
+            pageType,
+            paramsJson: '',
+          }
+        );
+      }),
     );
-  }
 
-  const geoReady = !!geoFilter || rawGeoOptions.length === 0;
-  const deviceReady = !!deviceFilter || rawDeviceOptions.length === 0;
-  const filtersReady = geoReady && deviceReady;
+    return { slots, pageTypes, matrix };
+  }, [filteredRows]);
 
+  const hasData = !loading && filteredRows.length > 0;
+
+  // ------------------------------------------------------------
+  // 5. Render
+  // ------------------------------------------------------------
   return (
-    <main style={{ padding: 24, maxWidth: 1400, margin: '0 auto' }}>
-      {/* Navigation */}
-      <nav style={{ marginBottom: 12, fontSize: 14 }}>
-        <Link href="/bidders">← Back to bidders</Link>
-        <span style={{ margin: '0 6px' }}>·</span>
-        <Link href="/profiles">Profiles</Link>
-      </nav>
 
-      <h1 style={{ fontSize: 26, marginBottom: 4 }}>
-        Bidder: <span style={{ fontWeight: 700 }}>{bidderCode}</span>
-      </h1>
 
-      <p style={{ marginBottom: 16, fontSize: 14 }}>
-        Matrix view grouped by <strong>article type</strong> (columns) and{' '}
-        <strong>slot name</strong> (rows).
+    <main style={{ padding: '24px' }}>
+
+      <MainNav active="bidders" />
+
+
+      <h1 style={{ marginBottom: '8px' }}>Bidder: {bidderCode}</h1>
+      <p style={{ marginBottom: '16px' }}>
+        Matrix view: <strong>slots × page types</strong> for this bidder. Each
+        cell shows the params JSON for that context.
       </p>
 
       {/* Filters */}
-      <div
-        style={{
-          display: 'flex',
-          flexWrap: 'wrap',
-          gap: '12px',
-          alignItems: 'center',
-          marginBottom: 16,
-          fontSize: 14,
-        }}
-      >
-        <span style={{ fontWeight: 600 }}>Filters:</span>
+      <div style={{ marginBottom: '16px' }}>
+        <span style={{ marginRight: 8 }}>Geo:</span>
+        <select
+          value={geoFilter}
+          onChange={(e) => setGeoFilter(e.target.value)}
+          style={{ marginRight: 16 }}
+        >
+          {geoOptions.map((geo) => (
+            <option key={geo} value={geo}>
+              {geo}
+            </option>
+          ))}
+        </select>
 
-        <label>
-          Geo:{' '}
-          <select
-            value={geoFilter}
-            onChange={(e) => setGeoFilter(e.target.value)}
-          >
-            {rawGeoOptions.map((g) => (
-              <option key={g} value={g}>
-                {g}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <label>
-          Device:{' '}
-          <select
-            value={deviceFilter}
-            onChange={(e) => setDeviceFilter(e.target.value)}
-          >
-            {rawDeviceOptions.map((d) => (
-              <option key={d} value={d}>
-                {d}
-              </option>
-            ))}
-          </select>
-        </label>
+        <span style={{ marginRight: 8 }}>Device:</span>
+        <select
+          value={deviceFilter}
+          onChange={(e) => setDeviceFilter(e.target.value)}
+        >
+          {deviceOptions.map((device) => (
+            <option key={device} value={device}>
+              {device}
+            </option>
+          ))}
+        </select>
       </div>
 
-      {loading && <p>Loading mappings…</p>}
+      {loading && <p>Loading matrix…</p>}
       {error && (
-        <p style={{ color: '#b91c1c', marginBottom: 16 }}>Error: {error}</p>
+        <p style={{ color: 'red', marginBottom: 16 }}>
+          Error loading mappings: {error}
+        </p>
       )}
 
-      {!loading && !error && !filtersReady && (
-        <p>Initialising filters…</p>
+      {!loading && !error && !hasData && (
+        <p>
+          No mappings for this bidder with the current filters.
+        </p>
       )}
 
-      {!loading && !error && filtersReady && slots.length === 0 && (
-        <p>No mappings for the selected filters.</p>
-      )}
-
-      {!loading && !error && filtersReady && slots.length > 0 && (
+      {hasData && (
         <div style={{ overflowX: 'auto' }}>
           <table>
             <thead>
               <tr>
-                <th style={{ width: 160 }}>Slot</th>
+                <th style={{ whiteSpace: 'nowrap' }}>Slot ↓ / Page type →</th>
                 {pageTypes.map((pt) => (
-                  <th key={pt}>{pt}</th>
+                  <th key={pt} style={{ minWidth: 160 }}>
+                    {pt}
+                  </th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {slots.map((slot) => {
-                const rowMap = matrix.get(slot) ?? new Map();
-
-                return (
-                  <tr key={slot}>
-                    <td style={{ fontWeight: 600 }}>{slot}</td>
-
-                    {pageTypes.map((pt) => {
-                      const params = rowMap.get(pt);
-
-                      return (
-                        <td
-                          key={pt}
+              {slots.map((slot, rowIdx) => (
+                <tr key={slot}>
+                  <td
+                    style={{
+                      fontWeight: 600,
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {slot}
+                  </td>
+                  {matrix[rowIdx].map((cell) => (
+                    <td
+                      key={`${cell.slot}-${cell.pageType}`}
+                      style={{ fontFamily: 'monospace', fontSize: 12 }}
+                    >
+                      {cell.paramsJson ? (
+                        <pre
                           style={{
-                            fontFamily:
-                              'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Courier New", monospace',
-                            fontSize: 12,
                             whiteSpace: 'pre-wrap',
+                            margin: 0,
                           }}
                         >
-                          {params ? JSON.stringify(params, null, 2) : '—'}
-                        </td>
-                      );
-                    })}
-                  </tr>
-                );
-              })}
+                          {cell.paramsJson}
+                        </pre>
+                      ) : (
+                        <span style={{ color: '#9ca3af' }}>—</span>
+                      )}
+                    </td>
+                  ))}
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>

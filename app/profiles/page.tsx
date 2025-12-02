@@ -1,181 +1,186 @@
 'use client';
 
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import MainNav from '@/components/MainNav';
 import { supabase } from '@/lib/supabaseClient';
 
-type RawProfile = {
+
+type ProfileRow = {
   id: number;
   name: string;
+  environment_id: number | null;
+  geo_id: number | null;
+  device_id: number | null;
+  page_type_id: number | null;
+  environment: string | null;
+  geo: string | null;
+  device: string | null;
+  page_type: string | null;
 };
-
-type Profile = RawProfile & {
-  environment: string;
-  geo: string;
-  device: string;
-  page_type: string;
-};
-
-function parseProfileName(name: string): {
-  environment: string;
-  geo: string;
-  device: string;
-  page_type: string;
-} {
-  const parts = name.split('|').map((p) => p.trim());
-  // expected: publisher | env | geo | device | page_type
-  return {
-    environment: parts[1] ?? '',
-    geo: parts[2] ?? '',
-    device: parts[3] ?? '',
-    page_type: parts[4] ?? '',
-  };
-}
 
 export default function ProfilesPage() {
-  const [profiles, setProfiles] = useState<Profile[]>([]);
+  const [rows, setRows] = useState<ProfileRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [envFilter, setEnvFilter] = useState('');
-  const [geoFilter, setGeoFilter] = useState('');
-  const [deviceFilter, setDeviceFilter] = useState('');
-  const [pageTypeFilter, setPageTypeFilter] = useState('');
+  const [envFilter, setEnvFilter] = useState<string>('All');
+  const [geoFilter, setGeoFilter] = useState<string>('All');
+  const [deviceFilter, setDeviceFilter] = useState<string>('All');
+  const [pageTypeFilter, setPageTypeFilter] = useState<string>('All');
 
   useEffect(() => {
-    async function loadProfiles() {
+    async function load() {
       setLoading(true);
       setError(null);
 
       const { data, error } = await supabase
         .from('config_profiles')
-        .select('id, name')
-        .order('id', { ascending: true });
+        .select(
+          `
+          id,
+          name,
+          environment_id,
+          geo_id,
+          device_id,
+          page_type_id,
+          environments:environments!inner(code),
+          geos:geos!inner(code),
+          devices:devices!inner(code),
+          page_types:page_types!inner(code)
+        `,
+        );
 
       if (error) {
         console.error(error);
         setError(error.message);
-        setLoading(false);
-        return;
+      } else {
+        // Map joined columns into flat fields
+        const mapped =
+          data?.map((row: any) => ({
+            id: row.id,
+            name: row.name,
+            environment_id: row.environment_id,
+            geo_id: row.geo_id,
+            device_id: row.device_id,
+            page_type_id: row.page_type_id,
+            environment: row.environments?.code ?? null,
+            geo: row.geos?.code ?? null,
+            device: row.devices?.code ?? null,
+            page_type: row.page_types?.code ?? null,
+          })) ?? [];
+
+        setRows(mapped);
       }
 
-      const mapped: Profile[] = (data ?? []).map((row) => {
-        const { environment, geo, device, page_type } = parseProfileName(
-          row.name || '',
-        );
-        return {
-          id: row.id,
-          name: row.name,
-          environment,
-          geo,
-          device,
-          page_type,
-        };
-      });
-
-      setProfiles(mapped);
       setLoading(false);
     }
 
-    loadProfiles();
+    load();
   }, []);
 
-  const envOptions = useMemo(
-    () => Array.from(new Set(profiles.map((p) => p.environment))).sort(),
-    [profiles],
-  );
-  const geoOptions = useMemo(
-    () => Array.from(new Set(profiles.map((p) => p.geo))).sort(),
-    [profiles],
-  );
-  const deviceOptions = useMemo(
-    () => Array.from(new Set(profiles.map((p) => p.device))).sort(),
-    [profiles],
-  );
-  const pageTypeOptions = useMemo(
-    () => Array.from(new Set(profiles.map((p) => p.page_type))).sort(),
-    [profiles],
-  );
+  const envOptions = useMemo(() => {
+    const s = new Set<string>();
+    rows.forEach((r) => r.environment && s.add(r.environment));
+    return Array.from(s).sort();
+  }, [rows]);
 
-  const filteredProfiles = profiles.filter((p) => {
-    if (envFilter && p.environment !== envFilter) return false;
-    if (geoFilter && p.geo !== geoFilter) return false;
-    if (deviceFilter && p.device !== deviceFilter) return false;
-    if (pageTypeFilter && p.page_type !== pageTypeFilter) return false;
-    return true;
-  });
+  const geoOptions = useMemo(() => {
+    const s = new Set<string>();
+    rows.forEach((r) => r.geo && s.add(r.geo));
+    return Array.from(s).sort();
+  }, [rows]);
+
+  const deviceOptions = useMemo(() => {
+    const s = new Set<string>();
+    rows.forEach((r) => r.device && s.add(r.device));
+    return Array.from(s).sort();
+  }, [rows]);
+
+  const pageTypeOptions = useMemo(() => {
+    const s = new Set<string>();
+    rows.forEach((r) => r.page_type && s.add(r.page_type));
+    return Array.from(s).sort();
+  }, [rows]);
+
+  const filtered = useMemo(() => {
+    return rows.filter((r) => {
+      if (envFilter !== 'All' && r.environment !== envFilter) return false;
+      if (geoFilter !== 'All' && r.geo !== geoFilter) return false;
+      if (deviceFilter !== 'All' && r.device !== deviceFilter) return false;
+      if (pageTypeFilter !== 'All' && r.page_type !== pageTypeFilter) return false;
+      return true;
+    });
+  }, [rows, envFilter, geoFilter, deviceFilter, pageTypeFilter]);
 
   return (
-    <main style={{ padding: '24px', maxWidth: 1100, margin: '0 auto' }}>
-      <h1 style={{ fontSize: '28px', marginBottom: '8px' }}>Profiles</h1>
+    <main style={{ padding: '24px' }}>
+      <MainNav active="profiles" />
 
-      {/* Filter bar */}
-      <div
-        style={{
-          display: 'flex',
-          flexWrap: 'wrap',
-          gap: '12px',
-          marginBottom: '16px',
-          alignItems: 'center',
-        }}
-      >
-        <span style={{ fontWeight: 500 }}>Filters:</span>
+      <h1 className="text-3xl font-bold mb-4">Profiles</h1>
 
-        <label style={{ fontSize: 14 }}>
+      <div className="mb-4 flex flex-wrap gap-3 items-center text-sm">
+        <span className="font-medium mr-1">Filters:</span>
+
+        <label>
           Env:{' '}
           <select
             value={envFilter}
             onChange={(e) => setEnvFilter(e.target.value)}
+            className="border rounded px-2 py-1 text-sm ml-1"
           >
-            <option value="">All</option>
-            {envOptions.map((env) => (
-              <option key={env} value={env}>
-                {env}
+            <option value="All">All</option>
+            {envOptions.map((v) => (
+              <option key={v} value={v}>
+                {v}
               </option>
             ))}
           </select>
         </label>
 
-        <label style={{ fontSize: 14 }}>
+        <label>
           Geo:{' '}
           <select
             value={geoFilter}
             onChange={(e) => setGeoFilter(e.target.value)}
+            className="border rounded px-2 py-1 text-sm ml-1"
           >
-            <option value="">All</option>
-            {geoOptions.map((geo) => (
-              <option key={geo} value={geo}>
-                {geo}
+            <option value="All">All</option>
+            {geoOptions.map((v) => (
+              <option key={v} value={v}>
+                {v}
               </option>
             ))}
           </select>
         </label>
 
-        <label style={{ fontSize: 14 }}>
+        <label>
           Device:{' '}
           <select
             value={deviceFilter}
             onChange={(e) => setDeviceFilter(e.target.value)}
+            className="border rounded px-2 py-1 text-sm ml-1"
           >
-            <option value="">All</option>
-            {deviceOptions.map((dev) => (
-              <option key={dev} value={dev}>
-                {dev}
+            <option value="All">All</option>
+            {deviceOptions.map((v) => (
+              <option key={v} value={v}>
+                {v}
               </option>
             ))}
           </select>
         </label>
 
-        <label style={{ fontSize: 14 }}>
+        <label>
           Page type:{' '}
           <select
             value={pageTypeFilter}
             onChange={(e) => setPageTypeFilter(e.target.value)}
+            className="border rounded px-2 py-1 text-sm ml-1"
           >
-            <option value="">All</option>
-            {pageTypeOptions.map((pt) => (
-              <option key={pt} value={pt}>
-                {pt}
+            <option value="All">All</option>
+            {pageTypeOptions.map((v) => (
+              <option key={v} value={v}>
+                {v}
               </option>
             ))}
           </select>
@@ -183,30 +188,37 @@ export default function ProfilesPage() {
       </div>
 
       {loading && <p>Loading profiles…</p>}
-      {error && <p style={{ color: '#b91c1c' }}>Error: {error}</p>}
+      {error && <p className="text-red-600 mb-4">Error: {error}</p>}
 
       {!loading && !error && (
         <table>
           <thead>
             <tr>
-              <th style={{ width: 60 }}>ID</th>
-              <th>Profile</th>
-              <th style={{ width: 140 }}>Matrix</th>
+              <th className="w-16 text-left">ID</th>
+              <th className="text-left">Profile</th>
+              <th className="w-40 text-left">Matrix</th>
             </tr>
           </thead>
           <tbody>
-            {filteredProfiles.map((p) => (
+            {filtered.map((p) => (
               <tr key={p.id}>
                 <td>{p.id}</td>
-                <td>{p.name}</td>
                 <td>
-                  <Link href={`/profiles/${p.id}`}>Open matrix</Link>
+                  {p.name || `${p.environment} | ${p.geo} | ${p.device} | ${p.page_type}`}
+                </td>
+                <td>
+                  <Link
+                    href={`/profiles/${p.id}`}
+                    className="text-blue-600 hover:underline whitespace-nowrap"
+                  >
+                    Open matrix
+                  </Link>
                 </td>
               </tr>
             ))}
-            {filteredProfiles.length === 0 && (
+            {filtered.length === 0 && (
               <tr>
-                <td colSpan={3} style={{ textAlign: 'center', padding: 16 }}>
+                <td colSpan={3} className="text-center text-gray-500 py-4">
                   No profiles match the current filters.
                 </td>
               </tr>
