@@ -187,6 +187,7 @@ export default function ProfilesPage() {
         </label>
       </div>
 
+      <p></p>
       {loading && <p>Loading profiles…</p>}
       {error && <p className="text-red-600 mb-4">Error: {error}</p>}
 

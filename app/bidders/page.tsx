@@ -107,55 +107,69 @@ export default function BiddersPage() {
         slots.
       </p>
 
-      <div className="mb-4 flex flex-wrap gap-3 items-center">
-        <input
-          type="text"
-          placeholder="Search bidder code…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="border rounded px-3 py-1 text-sm min-w-[220px]"
-        />
+      <div className="mb-4 flex flex-wrap gap-3 items-center text-sm">
+        <span className="font-medium mr-1">Filters:</span>
 
-        <select
-          value={geoFilter}
-          onChange={(e) => setGeoFilter(e.target.value)}
-          className="border rounded px-2 py-1 text-sm"
-        >
-          <option value="All">All geos</option>
-          {geoOptions.map((g) => (
-            <option key={g} value={g}>
-              {g}
-            </option>
-          ))}
-        </select>
+        <label>
+          Search:{' '}
+          <input
+            type="text"
+            placeholder="Search bidder code…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="border rounded px-2 py-1 text-sm ml-1 min-w-[220px]"
+          />
+        </label>
 
-        <select
-          value={deviceFilter}
-          onChange={(e) => setDeviceFilter(e.target.value)}
-          className="border rounded px-2 py-1 text-sm"
-        >
-          <option value="All">All devices</option>
-          {deviceOptions.map((d) => (
-            <option key={d} value={d}>
-              {d}
-            </option>
-          ))}
-        </select>
+        <label>
+          Geo:{' '}
+          <select
+            value={geoFilter}
+            onChange={(e) => setGeoFilter(e.target.value)}
+            className="border rounded px-2 py-1 text-sm ml-1"
+          >
+            <option value="All">All geos</option>
+            {geoOptions.map((g) => (
+              <option key={g} value={g}>
+                {g}
+              </option>
+            ))}
+          </select>
+        </label>
 
-        <select
-          value={pageTypeFilter}
-          onChange={(e) => setPageTypeFilter(e.target.value)}
-          className="border rounded px-2 py-1 text-sm"
-        >
-          <option value="All">All page types</option>
-          {pageTypeOptions.map((p) => (
-            <option key={p} value={p}>
-              {p}
-            </option>
-          ))}
-        </select>
+        <label>
+          Device:{' '}
+          <select
+            value={deviceFilter}
+            onChange={(e) => setDeviceFilter(e.target.value)}
+            className="border rounded px-2 py-1 text-sm ml-1"
+          >
+            <option value="All">All devices</option>
+            {deviceOptions.map((d) => (
+              <option key={d} value={d}>
+                {d}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label>
+          Page type:{' '}
+          <select
+            value={pageTypeFilter}
+            onChange={(e) => setPageTypeFilter(e.target.value)}
+            className="border rounded px-2 py-1 text-sm ml-1"
+          >
+            <option value="All">All page types</option>
+            {pageTypeOptions.map((p) => (
+              <option key={p} value={p}>
+                {p}
+              </option>
+            ))}
+          </select>
+        </label>
       </div>
-
+      <p></p>
       {loading && <p>Loading bidders…</p>}
       {error && <p className="text-red-600 mb-4">Error: {error}</p>}
 
@@ -164,7 +178,6 @@ export default function BiddersPage() {
           <thead>
             <tr>
               <th className="w-56 text-left">Bidder</th>
-              <th className="text-left">Details</th>
             </tr>
           </thead>
           <tbody>
@@ -175,9 +188,7 @@ export default function BiddersPage() {
                     {b.bidder}
                   </Link>
                 </td>
-                <td className="text-gray-500 text-sm">
-                  Click to view mappings for this bidder across profiles and slots.
-                </td>
+
               </tr>
             ))}
             {filteredBidders.length === 0 && (

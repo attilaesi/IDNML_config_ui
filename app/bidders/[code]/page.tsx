@@ -183,27 +183,24 @@ export default function BidderMatrixPage({
   // ------------------------------------------------------------
   // 5. Render
   // ------------------------------------------------------------
-  return (
+return (
+  <main style={{ padding: '24px' }}>
+    <MainNav active="bidders" />
 
+    <h1 className="text-3xl font-bold mb-2">Bidder: {bidderCode}</h1>
+    <p className="mb-4 text-gray-700">
+      Matrix view: <strong>slots × page types</strong> for this bidder. Each cell shows the params JSON for that context.
+    </p>
 
-    <main style={{ padding: '24px' }}>
+    <div className="mb-4 flex flex-wrap gap-3 items-center text-sm">
+      <span className="font-medium mr-1">Filters:</span>
 
-      <MainNav active="bidders" />
-
-
-      <h1 style={{ marginBottom: '8px' }}>Bidder: {bidderCode}</h1>
-      <p style={{ marginBottom: '16px' }}>
-        Matrix view: <strong>slots × page types</strong> for this bidder. Each
-        cell shows the params JSON for that context.
-      </p>
-
-      {/* Filters */}
-      <div style={{ marginBottom: '16px' }}>
-        <span style={{ marginRight: 8 }}>Geo:</span>
+      <label>
+        Geo:{' '}
         <select
           value={geoFilter}
           onChange={(e) => setGeoFilter(e.target.value)}
-          style={{ marginRight: 16 }}
+          className="border rounded px-2 py-1 text-sm ml-1"
         >
           {geoOptions.map((geo) => (
             <option key={geo} value={geo}>
@@ -211,11 +208,14 @@ export default function BidderMatrixPage({
             </option>
           ))}
         </select>
+      </label>
 
-        <span style={{ marginRight: 8 }}>Device:</span>
+      <label>
+        Device:{' '}
         <select
           value={deviceFilter}
           onChange={(e) => setDeviceFilter(e.target.value)}
+          className="border rounded px-2 py-1 text-sm ml-1"
         >
           {deviceOptions.map((device) => (
             <option key={device} value={device}>
@@ -223,8 +223,11 @@ export default function BidderMatrixPage({
             </option>
           ))}
         </select>
-      </div>
+      </label>
+    </div>
 
+    {/* rest of the matrix table */}
+        <p></p>
       {loading && <p>Loading matrix…</p>}
       {error && (
         <p style={{ color: 'red', marginBottom: 16 }}>
